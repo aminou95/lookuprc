@@ -26,3 +26,5 @@ server*.log
 dev*.log
 local-*.log
 local-*.err
+
+.vercel
