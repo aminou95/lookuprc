@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
-const sessionFile = path.join(process.cwd(), ".sidjilcom-session.local.json");
+const localSessionFile = path.join(process.cwd(), ".sidjilcom-session.local.json");
+const tempSessionFile = path.join(os.tmpdir(), ".sidjilcom-session.local.json");
 
 export type SidjilcomServerSession = {
   cookie: string;
@@ -36,7 +38,12 @@ export function parseSidjilcomSessionInput(input: { cookie?: string; pAuth?: str
   };
 }
 
+function chooseSessionFile() {
+  return existsSync(localSessionFile) ? localSessionFile : tempSessionFile;
+}
+
 export function readSidjilcomServerSession(): SidjilcomServerSession | null {
+  const sessionFile = chooseSessionFile();
   if (!existsSync(sessionFile)) {
     return null;
   }
@@ -59,6 +66,17 @@ export async function writeSidjilcomServerSession(cookie: string, pAuth: string)
     updatedAt: new Date().toISOString()
   };
 
-  await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf8");
+  const preferredPath = localSessionFile;
+  try {
+    await writeFile(preferredPath, JSON.stringify(session, null, 2), "utf8");
+    return session;
+  } catch (error) {
+    console.warn(
+      "SIDJILCOM SESSION WRITE FAILED, falling back to temp directory:",
+      error instanceof Error ? error.message : error
+    );
+  }
+
+  await writeFile(tempSessionFile, JSON.stringify(session, null, 2), "utf8");
   return session;
 }

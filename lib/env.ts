@@ -1,5 +1,5 @@
 import { directEnv } from "@/lib/direct-env";
 
 export function serverEnv(name: string) {
-  return process.env[name] ?? directEnv[name] ?? "";
+  return String(process.env[name] ?? directEnv[name] ?? "").trim();
 }

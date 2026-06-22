@@ -12,7 +12,7 @@ Application Next.js 15 pour rechercher des entreprises via un formulaire CNRC de
 - Supabase ou Google Sheets pour l'historique
 - AppSheet pour verification des clients PHY
 
-## Installation
+## Installation locale
 
 ```bash
 npm install
@@ -91,40 +91,43 @@ L'app ajoute automatiquement la ligne d'en-tete et journalise les recherches, de
 
 ## Deploiement Vercel
 
-Le chemin recommande pour la production est Vercel.
+Chemin recommande si vous voulez un hebergement simple du frontend Next.js:
 
 1. Importez le depot GitHub dans Vercel.
 2. Framework preset: `Next.js`.
-3. Build command: laissez la valeur par defaut `next build`.
-4. Ajoutez dans Vercel > Settings > Environment Variables:
+3. Laissez Vercel utiliser `next build`.
+4. Ajoutez les variables d'environnement serveur:
    - `SIDJILCOM_COOKIE`
    - `SIDJILCOM_P_AUTH`
    - `SIDJILCOM_ADMIN_KEY`
    - `SIDJILCOM_LOOKUP_URL`
-   - variables Supabase si vous voulez enregistrer l'historique
-   - variables Google Sheets si vous voulez enregistrer l'historique dans Sheets
-   - variables AppSheet si vous voulez verifier vos clients AppSheet
+   - variables Supabase si vous utilisez l'historique
+   - variables Google Sheets si vous utilisez l'historique dans Sheets
+   - variables AppSheet si vous utilisez la verification PHY
 5. Redeployez apres chaque mise a jour de session Sidjilcom.
 
 `SIDJILCOM_COOKIE`, `SIDJILCOM_P_AUTH`, `SIDJILCOM_ADMIN_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `APPSHEET_ACCESS_KEY` et `GOOGLE_PRIVATE_KEY` doivent rester uniquement cote serveur.
 
-## Deploiement Netlify
+## Deploiement sur serveur Node
 
-Le projet contient `netlify.toml` et `@netlify/plugin-nextjs`.
+Si vous voulez un hebergement classique sur VPS ou serveur dedie:
 
-1. Importez le depot dans Netlify.
-2. Build command: `npm run build`.
-3. Publish directory: `.next`.
-4. Ajoutez dans Netlify > Site configuration > Environment variables:
-   - `SIDJILCOM_COOKIE`
-   - `SIDJILCOM_P_AUTH`
-   - `SIDJILCOM_ADMIN_KEY`
-   - `SIDJILCOM_LOOKUP_URL`
-   - variables Supabase si vous voulez enregistrer l'historique
-   - variables Google Sheets si vous voulez enregistrer l'historique dans Sheets
-   - variables AppSheet si vous voulez verifier vos clients AppSheet
-5. Deploy.
+```bash
+npm install
+npm run build
+npm start
+```
 
-En production Netlify, mettez a jour `SIDJILCOM_COOKIE` et `SIDJILCOM_P_AUTH` dans les variables d'environnement quand votre session Sidjilcom expire, puis redeployez.
+Le serveur Next.js ecoute ensuite par defaut sur le port `3000`.
 
-La route API garde le cookie Sidjilcom cote serveur. Le cookie n'est jamais expose au navigateur.
+Exemple avec PM2:
+
+```bash
+pm2 start npm --name lookuprc -- start
+```
+
+## Note importante sur Sidjilcom
+
+Le frontend peut etre heberge sans probleme sur Vercel.
+
+En revanche, selon la politique reseau ou anti-bot de Sidjilcom, certaines executions serverless peuvent ne pas pouvoir joindre `sidjilcom.cnrc.dz`. Dans ce cas, gardez la meme application mais faites tourner le backend Next.js sur un serveur Node classique ou un VPS.

@@ -1394,6 +1394,7 @@ export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, op
               "Accept-Language": acceptLanguage(payload),
               Origin: "https://sidjilcom.cnrc.dz",
               Referer: refererForPayload(payload),
+              "User-Agent": "Mozilla/5.0",
               "X-PJAX": "true",
               "X-Requested-With": "XMLHttpRequest",
               Cookie: cookieForPayload(session.cookie, payload)
