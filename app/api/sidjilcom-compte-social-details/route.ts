@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateSidjilcomSearchPayload } from "@/lib/cnrc";
 import { checkRateLimit, publicIp } from "@/lib/cnrc-cache";
-import { appendCompteSocialDetails, appendSearchEvent } from "@/lib/google-sheets";
+import { appendCompteSocialDetails, appendSearchEvent, getGoogleCachedCompteSocialDetails } from "@/lib/google-sheets";
 import { lookupSidjilcomCompteSocialDetails } from "@/lib/sidjilcom";
 import type { SidjilcomSearchPayload } from "@/lib/types";
 
@@ -22,6 +22,11 @@ export async function POST(request: Request) {
   const validationErrors = validateSidjilcomSearchPayload(payload);
   if (Object.keys(validationErrors).length > 0) {
     return NextResponse.json({ error: "Champs de recherche invalides.", code: "VALIDATION", fields: validationErrors }, { status: 400 });
+  }
+
+  const googleCached = await getGoogleCachedCompteSocialDetails(body.nrc, body.exercice);
+  if (googleCached) {
+    return NextResponse.json(googleCached);
   }
 
   if (!checkRateLimit(`compte-social-detail:${publicIp(request)}`, 3, 60_000)) {

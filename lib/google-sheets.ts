@@ -695,6 +695,107 @@ export async function getGoogleCachedCompanyByRc(rc: string) {
   }
 }
 
+export async function getGoogleCachedAnnexes(parentRc: string) {
+  const config = getConfig();
+  const normalizedRc = parentRc.toUpperCase().replace(/[^0-9A-Z-]/g, "");
+  if (!config || !normalizedRc) return null;
+
+  try {
+    await ensureSheet(config.annexesSheetName, annexHeaders);
+    const response = await sheetsRequest(`/values/${encodeURIComponent(quotedRange(config.annexesSheetName, "A2:E"))}`);
+    if (!response?.ok) return null;
+
+    const data = (await response.json()) as { values?: string[][] };
+    const rows = (data.values ?? []).filter((row) => cleanSheetText(row[1]).toUpperCase().replace(/[^0-9A-Z-]/g, "") === normalizedRc);
+    const row = rows.at(-1);
+    if (!row) return null;
+
+    const annexes = parseJson<SidjilcomAnnex[]>(row[4], []).filter((annex) => annex?.rc);
+    if (!annexes.length) return null;
+
+    return {
+      annexes,
+      cache: {
+        hit: true,
+        checkedAt: row[0] ?? null
+      }
+    };
+  } catch (error) {
+    console.log("GOOGLE SHEETS ANNEX CACHE READ ERROR:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+export async function getGoogleCachedComptesSociaux(rc: string) {
+  const config = getConfig();
+  const normalizedRc = rc.toUpperCase().replace(/[^0-9A-Z-]/g, "");
+  if (!config || !normalizedRc) return null;
+
+  try {
+    await ensureSheet(config.comptesSheetName, comptesHeaders);
+    const response = await sheetsRequest(`/values/${encodeURIComponent(quotedRange(config.comptesSheetName, "A2:E"))}`);
+    if (!response?.ok) return null;
+
+    const data = (await response.json()) as { values?: string[][] };
+    const rows = (data.values ?? []).filter((row) => cleanSheetText(row[1]).toUpperCase().replace(/[^0-9A-Z-]/g, "") === normalizedRc);
+    const row = rows.at(-1);
+    if (!row) return null;
+
+    const parsed = parseJson<Array<{ exercice: string; dateDepot?: string; statut?: string; raw?: unknown }> | { exercice?: string; details?: unknown }>(row[4], []);
+    const comptesSociaux = Array.isArray(parsed) ? parsed.filter((item) => item?.exercice) : [];
+    if (!comptesSociaux.length) return null;
+
+    return {
+      comptesSociaux,
+      cache: {
+        hit: true,
+        checkedAt: row[0] ?? null
+      }
+    };
+  } catch (error) {
+    console.log("GOOGLE SHEETS COMPTES CACHE READ ERROR:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+export async function getGoogleCachedCompteSocialDetails(rc: string, exercice: string) {
+  const config = getConfig();
+  const normalizedRc = rc.toUpperCase().replace(/[^0-9A-Z-]/g, "");
+  const normalizedExercice = exercice.trim();
+  if (!config || !normalizedRc || !normalizedExercice) return null;
+
+  try {
+    await ensureSheet(config.comptesSheetName, comptesHeaders);
+    const response = await sheetsRequest(`/values/${encodeURIComponent(quotedRange(config.comptesSheetName, "A2:E"))}`);
+    if (!response?.ok) return null;
+
+    const data = (await response.json()) as { values?: string[][] };
+    const rows = (data.values ?? []).filter((row) => cleanSheetText(row[1]).toUpperCase().replace(/[^0-9A-Z-]/g, "") === normalizedRc);
+
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      const parsed = parseJson<{ exercice?: string; details?: unknown; rawFields?: Record<string, string> } | Array<unknown>>(row[4], {});
+      if (Array.isArray(parsed)) continue;
+      if ((parsed.exercice ?? "").trim() !== normalizedExercice) continue;
+
+      return {
+        exercice: normalizedExercice,
+        details: parsed.details ?? {},
+        rawFields: parsed.rawFields ?? {},
+        cache: {
+          hit: true,
+          checkedAt: row[0] ?? null
+        }
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.log("GOOGLE SHEETS COMPTE DETAIL CACHE READ ERROR:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 export async function getGoogleSheetCompanies() {
   const config = getConfig();
   if (!config) return null;

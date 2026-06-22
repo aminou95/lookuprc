@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit, getCachedCompany, publicIp, upsertCompanyAnnexes } from "@/lib/cnrc-cache";
 import { validateSidjilcomSearchPayload } from "@/lib/cnrc";
-import { appendAnnexes, appendSearchEvent } from "@/lib/google-sheets";
+import { appendAnnexes, appendSearchEvent, getGoogleCachedAnnexes } from "@/lib/google-sheets";
 import { lookupSidjilcomAnnexes } from "@/lib/sidjilcom";
 import type { SidjilcomSearchPayload } from "@/lib/types";
 
@@ -32,11 +32,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ annexes: cached.annexes, cache: { hit: true } });
   }
 
+  const targetNrc = nrc || cached?.rc || `${payload.nrc1}${payload.nrc2}${payload.nrc3}`;
+  const googleCached = await getGoogleCachedAnnexes(targetNrc);
+  if (googleCached?.annexes?.length) {
+    return NextResponse.json({ annexes: googleCached.annexes, cache: googleCached.cache });
+  }
+
   if (!checkRateLimit(`annexes:${publicIp(request)}`, 5, 60_000)) {
     return jsonError("Trop de demandes de secondaires. Veuillez patienter une minute.", 429, "RATE_LIMIT");
   }
 
-  const targetNrc = nrc || cached?.rc || `${payload.nrc1}${payload.nrc2}${payload.nrc3}`;
   const lookup = await lookupSidjilcomAnnexes(payload, targetNrc);
 
   if (!lookup.ok) {
