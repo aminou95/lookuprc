@@ -18,6 +18,29 @@ function inferIdCommercant(payload: SidjilcomSearchPayload, rc: string) {
   return normalized;
 }
 
+function payloadFromExactRc(
+  payload: SidjilcomSearchPayload,
+  rcOrId: string
+): SidjilcomSearchPayload | null {
+  const normalized = rcOrId.toUpperCase().replace(/[^0-9A-Z]/g, "");
+  const match = normalized.match(/^(\d{2})(W1|W2|A|B|D|S)(\d{7})(\d{2})(\d{2})$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    ...payload,
+    searchType: "morale",
+    lookupMode: "rc",
+    nrc1: match[1],
+    nrc2: match[2].toUpperCase() as SidjilcomSearchPayload["nrc2"],
+    nrc3: match[3],
+    nrc4: match[4],
+    nrc5: match[5]
+  };
+}
+
 function normalizeMoraleDetailId(
   payload: SidjilcomSearchPayload,
   idCommercant: string,
@@ -125,11 +148,20 @@ function buildFallbackDetails(company: Pick<CompanyResult, "rc" | "nom" | "preno
   };
 }
 
+function isSummaryOnlyDetails(details?: SidjilcomDetails | null) {
+  if (!details) return false;
+
+  const source = String(details.rawFields?.Source ?? details.rawFields?.source ?? "")
+    .trim()
+    .toLowerCase();
+
+  return source === "resume sidjilcom";
+}
+
 function hasMeaningfulDetails(details?: SidjilcomDetails | null) {
   if (!details) return false;
 
-  const source = String(details.rawFields?.Source ?? details.rawFields?.source ?? "").trim().toLowerCase();
-  if (source === "resume sidjilcom") {
+  if (isSummaryOnlyDetails(details)) {
     return false;
   }
 
@@ -183,13 +215,18 @@ export async function POST(request: Request) {
 
   if (searchType === "cnrc") {
     const cached = await getCachedCompany(payload);
-    if (cached?.cache.detailsAvailable && hasMeaningfulDetails(cached.details)) {
+    if (cached?.cache.detailsAvailable && !isSummaryOnlyDetails(cached.details) && hasMeaningfulDetails(cached.details)) {
       return NextResponse.json(cached);
     }
   }
 
   const googleCached = await getGoogleCachedCompany(payload);
-  if (googleCached?.details && googleCached.cache?.detailsAvailable && hasMeaningfulDetails(googleCached.details)) {
+  if (
+    googleCached?.details &&
+    googleCached.cache?.detailsAvailable &&
+    !isSummaryOnlyDetails(googleCached.details) &&
+    hasMeaningfulDetails(googleCached.details)
+  ) {
     return NextResponse.json({
       ...googleCached,
       cache: {
@@ -201,7 +238,12 @@ export async function POST(request: Request) {
   }
 
   const googleCachedByRc = await getGoogleCachedCompanyByRc(selectedRc || idCommercant);
-  if (googleCachedByRc?.details && googleCachedByRc.cache?.detailsAvailable && hasMeaningfulDetails(googleCachedByRc.details)) {
+  if (
+    googleCachedByRc?.details &&
+    googleCachedByRc.cache?.detailsAvailable &&
+    !isSummaryOnlyDetails(googleCachedByRc.details) &&
+    hasMeaningfulDetails(googleCachedByRc.details)
+  ) {
     return NextResponse.json({
       ...googleCachedByRc,
       cache: {
@@ -224,7 +266,20 @@ export async function POST(request: Request) {
   );
 
   if (idCommercant) {
-    const detailLookup = await lookupSidjilcomDetailsById(payload, idCommercant);
+    let detailLookup = await lookupSidjilcomDetailsById(payload, idCommercant);
+
+    if (searchType === "morale" && detailLookup.ok && detailLookup.detailUnavailableReason) {
+      const retryPayload = payloadFromExactRc(payload, idCommercant || selectedRc || selectedCompany?.rc || "");
+
+      if (retryPayload) {
+        await lookupSidjilcomCompany(retryPayload, { includeDetails: false });
+        const retriedLookup = await lookupSidjilcomDetailsById(retryPayload, idCommercant);
+        if (retriedLookup.ok && !retriedLookup.detailUnavailableReason) {
+          detailLookup = retriedLookup;
+        }
+      }
+    }
+
     if (!detailLookup.ok) {
       return jsonError(detailLookup.error, detailLookup.status, "NETWORK");
     }
@@ -252,7 +307,7 @@ export async function POST(request: Request) {
       details,
       cache: {
         hit: false,
-        detailsAvailable: searchType === "morale" ? true : Boolean(detailLookup.details && !detailLookup.detailUnavailableReason),
+        detailsAvailable: !isSummaryOnlyDetails(details) && Boolean(detailLookup.details && !detailLookup.detailUnavailableReason),
         checkedAt: new Date().toISOString()
       }
     };

@@ -8,6 +8,7 @@ dist
 coverage
 *.log
 *.err
+*.tsbuildinfo
 .sidjilcom-session.local.json
 .agents/
 skills-lock.json

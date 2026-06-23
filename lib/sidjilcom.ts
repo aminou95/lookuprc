@@ -837,6 +837,16 @@ function hasDetailsMarker(html: string, idCommercant: string) {
   );
 }
 
+function hasPmDetailsSignal(html: string, idCommercant: string) {
+  if (!html) return false;
+
+  if (hasDetailsMarker(html, idCommercant)) {
+    return true;
+  }
+
+  return /raison sociale|forme juridique|capital|gerant|g[eé]rant|associe|associ[eé]|activit[eé]|detailpm|societe/i.test(html);
+}
+
 function buildActionParams(payload: SidjilcomSearchPayload, command: string) {
   const isMorale = payload.searchType === "morale";
   const params = new URLSearchParams();
@@ -1068,7 +1078,10 @@ export async function lookupSidjilcomDetailsById(payload: SidjilcomSearchPayload
     };
   }
 
-  const detailsHtml = await fetchDetailsHtml(idCommercant, session.cookie, session.pAuth, payload);
+  const sessionForPayload = await bootstrapSidjilcomSession(session.cookie, session.pAuth, payload);
+  await writeSidjilcomServerSession(sessionForPayload.cookie, sessionForPayload.pAuth);
+
+  const detailsHtml = await fetchDetailsHtml(idCommercant, sessionForPayload.cookie, sessionForPayload.pAuth, payload);
   const details = detailsHtml ? parseSidjilcomDetails(detailsHtml) : emptyDetails();
 
   if (!details.merchant.rc) {
@@ -1276,7 +1289,7 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
 
   let detailCookie = cookie;
 
-  const headers = {
+  const initHeaders = {
     Accept: "text/plain, */*",
     "Accept-Language": acceptLanguage(payload),
     Origin: "https://sidjilcom.cnrc.dz",
@@ -1288,7 +1301,7 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
 
   const initResponse = await fetch(initUrl, {
     method: "GET",
-    headers,
+    headers: initHeaders,
     cache: "no-store"
   });
 
@@ -1298,13 +1311,28 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
   console.log("INIT STATUS:", initResponse.status);
   console.log("INIT TEXT:", initText);
 
+  if (isMorale && hasPmDetailsSignal(initText, idCommercant)) {
+    const parsedInitDetails = parseSidjilcomDetails(initText);
+    if (hasMeaningfulDetails(parsedInitDetails, idCommercant)) {
+      return initText;
+    }
+  }
+
   const detailsResponse = await fetch(detailsUrl, {
     method: "GET",
     headers: {
-      ...headers,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: initUrl,
-      Cookie: cookieForPayload(detailCookie, payload)
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+      "Accept-Language": acceptLanguage(payload),
+      "Cache-Control": "max-age=0",
+      Connection: "keep-alive",
+      Referer: initReferer,
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
+      Cookie: cookieForPayload(detailCookie, payload),
+      "User-Agent": "Mozilla/5.0"
     },
     cache: "no-store"
   });
@@ -1315,13 +1343,20 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
   console.log("DETAILS HAS NIF:", detailsHtml.includes("NIF"));
   console.log("DETAILS HAS RC:", detailsHtml.includes(idCommercant));
 
+  if (isMorale) {
+    const parsedDetails = parseSidjilcomDetails(detailsHtml);
+    if (hasMeaningfulDetails(parsedDetails, idCommercant)) {
+      return detailsHtml;
+    }
+  }
+
   if (isMorale && !hasDetailsMarker(detailsHtml, idCommercant)) {
     const scfResponse = await fetch(detailsScfUrl, {
       method: "GET",
       headers: {
-        ...headers,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        Referer: initUrl,
+        "Accept-Language": acceptLanguage(payload),
+        Referer: initReferer,
         Cookie: cookieForPayload(detailCookie, payload)
       },
       cache: "no-store"
@@ -1329,6 +1364,12 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
     const scfHtml = await scfResponse.text();
     console.log("DETAILS SCF STATUS:", scfResponse.status);
     console.log("DETAILS SCF HAS RC:", scfHtml.includes(idCommercant));
+    if (hasPmDetailsSignal(scfHtml, idCommercant)) {
+      const parsedScfDetails = parseSidjilcomDetails(scfHtml);
+      if (hasMeaningfulDetails(parsedScfDetails, idCommercant)) {
+        return scfHtml;
+      }
+    }
     if (hasDetailsMarker(scfHtml, idCommercant)) {
       return scfHtml;
     }

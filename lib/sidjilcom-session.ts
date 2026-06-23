@@ -22,8 +22,14 @@ function extractCookieFromCurl(input: string) {
 }
 
 function extractPAuth(input: string) {
+  const multipartEscapedMatch = input.match(new RegExp(String.raw`name=["']p_auth["'][\s\S]{0,200}?\\r\\n\\r\\n([^\\'"]+)`));
+  const multipartLiteralMatch = input.match(new RegExp(String.raw`name=["']p_auth["'][\s\S]{0,200}?\r\n\r\n([^\r\n'"]+)`));
+
   return (
     input.match(/[?&]p_auth=([^&\s'"]+)/)?.[1] ||
+    multipartEscapedMatch?.[1] ||
+    multipartLiteralMatch?.[1] ||
+    input.match(/(?:^|[?&'"\s])p_auth=([^&\s'"]+)/)?.[1] ||
     input.match(/Liferay\.authToken\s*=\s*["']([^"']+)["']/)?.[1] ||
     input.match(/SIDJILCOM_P_AUTH\s*=\s*([^\s]+)/)?.[1] ||
     ""
