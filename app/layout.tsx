@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Sidjilcom Lookup DZ",
+  title: "CRLook",
   description: "Recherche CNRC pour cabinets comptables algériens"
 };
 

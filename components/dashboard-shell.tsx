@@ -32,7 +32,7 @@ export function DashboardShell({ title, subtitle, children }: DashboardShellProp
               <Sparkles className="h-3.5 w-3.5" />
               Recherche premium
             </div>
-            <p className="mt-4 text-xl font-bold tracking-tight text-ink">Sidjilcom Lookup DZ</p>
+            <p className="mt-4 text-xl font-bold tracking-tight text-ink">CRLook</p>
             <p className="mt-1 text-sm text-slate-600">Cabinets comptables algériens</p>
           </div>
           <nav className="flex-1 space-y-1 px-4 py-5">

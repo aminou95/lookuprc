@@ -1,4 +1,4 @@
-# Sidjilcom Lookup DZ
+# CRLook
 
 Application Next.js 15 pour rechercher des entreprises via un formulaire CNRC de style Sidjilcom, afficher les details premium quand une session serveur Sidjilcom est configuree, et archiver les resultats dans Supabase ou Google Sheets.
 
