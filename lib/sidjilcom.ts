@@ -1378,6 +1378,14 @@ async function fetchDetailsHtml(idCommercant: string, cookie: string, pAuth: str
   return detailsHtml;
 }
 
+function isRetryableSidjilcomStatus(status: number) {
+  return [502, 503, 504].includes(status);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, options: { includeDetails?: boolean } = {}) {
   const localSession = readSidjilcomServerSession();
   const envCookie = localSession?.cookie || serverEnv("SIDJILCOM_COOKIE") || PRIVATE_SIDJILCOM_COOKIE;
@@ -1402,9 +1410,10 @@ export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, op
 
   try {
     session = await bootstrapSidjilcomSession(envCookie, envPAuth, payload);
-    response =
+
+    const runPrimarySearch = () =>
       searchType === "morale"
-        ? await fetch(
+        ? fetch(
             `${pageUrlForPayload(payload)}?p_p_id=${portletId}&p_p_lifecycle=1&p_p_state=normal&p_p_mode=view&${portletPrefix}javax.portlet.action=actionPM`,
             {
             method: "POST",
@@ -1424,7 +1433,7 @@ export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, op
             body: buildSidjilcomPmFormData(payload, session.pAuth),
             cache: "no-store"
           })
-        : await fetch(
+        : fetch(
             searchType === "cnrc" && !isArabicPayload(payload)
               ? lookupUrl
               : `${pageUrlForPayload(payload)}?p_p_id=${portletId}&p_p_lifecycle=1&p_p_state=normal&p_p_mode=view&${portletPrefix}javax.portlet.action=action`,
@@ -1443,6 +1452,13 @@ export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, op
             body: buildSidjilcomFormData(payload, session.pAuth),
             cache: "no-store"
           });
+
+    response = await runPrimarySearch();
+    if (isRetryableSidjilcomStatus(response.status)) {
+      await wait(800);
+      response = await runPrimarySearch();
+    }
+
     if (searchType === "morale" && !response.ok) {
       response = await fetch(buildSidjilcomPmGetUrl(payload), {
         method: "GET",
@@ -1459,6 +1475,24 @@ export async function lookupSidjilcomCompany(payload: SidjilcomSearchPayload, op
         },
         cache: "no-store"
       });
+      if (isRetryableSidjilcomStatus(response.status)) {
+        await wait(800);
+        response = await fetch(buildSidjilcomPmGetUrl(payload), {
+          method: "GET",
+          headers: {
+            Accept: "application/json, text/javascript, */*",
+            "Accept-Language": acceptLanguage(payload),
+            Referer: refererForPayload(payload),
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            Cookie: cookieForPayload(session.cookie, payload),
+            "User-Agent": "Mozilla/5.0"
+          },
+          cache: "no-store"
+        });
+      }
     }
     html = await response.text();
     session = {

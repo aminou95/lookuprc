@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit, getCachedCompany, publicIp, upsertCompanySummary } from "@/lib/cnrc-cache";
 import { validateSidjilcomSearchPayload } from "@/lib/cnrc";
-import { appendSearchEvent, getGoogleCachedCompany } from "@/lib/google-sheets";
+import { appendSearchEvent, getGoogleCachedCompaniesByName, getGoogleCachedCompany } from "@/lib/google-sheets";
 import { lookupSidjilcomCompany } from "@/lib/sidjilcom";
 import type { SidjilcomSearchPayload } from "@/lib/types";
 
@@ -21,6 +21,10 @@ function repairText(value: string) {
   } catch {
     return value;
   }
+}
+
+function isTemporarySidjilcomFailure(status: number, code?: string) {
+  return code === "NETWORK" && [502, 503, 504].includes(status);
 }
 
 function repairCompany<T extends { nom?: string; prenom?: string; adresse?: string; statut?: string }>(company: T): T {
@@ -88,6 +92,33 @@ export async function POST(request: Request) {
 
   const lookup = await lookupSidjilcomCompany(payload, { includeDetails: false });
   if (!lookup.ok) {
+    if (isTemporarySidjilcomFailure(lookup.status, lookup.code)) {
+      const cachedResults = (await getGoogleCachedCompaniesByName(payload)).map(repairCompany);
+      const cachedCompany = cachedResults[0];
+
+      if (cachedCompany) {
+        await appendSearchEvent({
+          event: "lookup_google_cache_fallback",
+          payload,
+          company: cachedCompany,
+          resultCount: cachedResults.length,
+          metadata: { cache: true, source: "google_sheets", upstreamStatus: lookup.status, upstreamError: lookup.error }
+        });
+
+        return NextResponse.json({
+          ...cachedCompany,
+          results: cachedResults,
+          cache: {
+            hit: true,
+            detailsAvailable: Boolean(cachedCompany.details),
+            checkedAt: cachedCompany.cache?.checkedAt ?? new Date().toISOString(),
+            source: "google_sheets_fallback"
+          },
+          warning: "Sidjilcom est temporairement indisponible. Resultat charge depuis le cache."
+        });
+      }
+    }
+
     return jsonError(lookup.error, lookup.status, lookup.code as SidjilcomErrorCode);
   }
 

@@ -629,27 +629,86 @@ export async function getGoogleCachedCompany(payload: SidjilcomSearchPayload) {
       return null;
     }
 
-    const parsedDetails = parseJson<SidjilcomDetails | undefined>(row[19], undefined);
-    const details = hasMeaningfulDetails(parsedDetails) ? parsedDetails : undefined;
-    if (!row[5] && !row[6] && !row[9] && !row[10] && !details) return null;
-    return {
-      rc: cleanSheetText(row[4]),
-      nom: cleanSheetText(row[5]),
-      prenom: cleanSheetText(row[6]),
-      adresse: cleanSheetText(row[9]),
-      statut: cleanSheetText(row[10]),
-      idCommercant: inferIdFromRow(row),
-      hasSecondaires: row[12] === "true",
-      details,
-      cache: {
-        hit: true,
-        detailsAvailable: hasMeaningfulDetails(details),
-        checkedAt: row[0] ?? null
-      }
-    } satisfies CompanyResult;
+    const company = companyFromSheetRow(row);
+    if (!company.nom && !company.prenom && !company.adresse && !company.statut && !company.details) return null;
+    return company satisfies CompanyResult;
   } catch (error) {
     console.log("GOOGLE SHEETS CACHE READ ERROR:", error instanceof Error ? error.message : error);
     return null;
+  }
+}
+
+
+function normalizeSearchText(value: string | undefined) {
+  return cleanSheetText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function companyFromSheetRow(row: string[]): CompanyResult {
+  const parsedDetails = parseJson<SidjilcomDetails | undefined>(row[19], undefined);
+  const details = hasMeaningfulDetails(parsedDetails) ? parsedDetails : undefined;
+
+  return {
+    rc: cleanSheetText(row[4]),
+    nom: cleanSheetText(row[5]),
+    prenom: cleanSheetText(row[6]),
+    adresse: cleanSheetText(row[9]),
+    statut: cleanSheetText(row[10]),
+    idCommercant: inferIdFromRow(row),
+    hasSecondaires: row[12] === "true",
+    details,
+    cache: {
+      hit: true,
+      detailsAvailable: hasMeaningfulDetails(details),
+      checkedAt: row[0] ?? null
+    }
+  };
+}
+
+export async function getGoogleCachedCompaniesByName(payload: SidjilcomSearchPayload, limit = 10) {
+  const config = getConfig();
+  if (!config) return [];
+
+  const lookupMode = payload.lookupMode ?? "name";
+  const terms = [
+    lookupMode === "name" ? payload.nomCommercial : "",
+    lookupMode === "name" || lookupMode === "associate" ? payload.nom : "",
+    lookupMode === "name" || lookupMode === "associate" ? payload.prenom : ""
+  ]
+    .map(normalizeSearchText)
+    .filter(Boolean);
+
+  if (!terms.length) return [];
+
+  try {
+    await ensureSheet(config.companiesSheetName, companyHeaders);
+    const response = await sheetsRequest(`/values/${encodeURIComponent(quotedRange(config.companiesSheetName, "A2:T"))}`);
+    if (!response?.ok) return [];
+
+    const data = (await response.json()) as { values?: string[][] };
+    const rows = (data.values ?? []).filter((row) => {
+      const haystack = normalizeSearchText([row[5], row[6], row[7], row[8], row[9]].filter(Boolean).join(" "));
+      return terms.every((term) => haystack.includes(term));
+    });
+
+    const byRc = new Map<string, string[]>();
+    for (const row of rows) {
+      const rc = cleanSheetText(row[4]);
+      if (rc) byRc.set(rc, row);
+    }
+
+    return [...byRc.values()]
+      .slice(-limit)
+      .reverse()
+      .map(companyFromSheetRow)
+      .filter((company) => company.rc || company.nom || company.adresse || company.details);
+  } catch (error) {
+    console.log("GOOGLE SHEETS NAME CACHE READ ERROR:", error instanceof Error ? error.message : error);
+    return [];
   }
 }
 
@@ -672,23 +731,7 @@ export async function getGoogleCachedCompanyByRc(rc: string) {
     const row = rows.at(-1);
     if (!row) return null;
 
-    const parsedDetails = parseJson<SidjilcomDetails | undefined>(row[19], undefined);
-    const details = hasMeaningfulDetails(parsedDetails) ? parsedDetails : undefined;
-    return {
-      rc: cleanSheetText(row[4]),
-      nom: cleanSheetText(row[5]),
-      prenom: cleanSheetText(row[6]),
-      adresse: cleanSheetText(row[9]),
-      statut: cleanSheetText(row[10]),
-      idCommercant: inferIdFromRow(row),
-      hasSecondaires: row[12] === "true",
-      details,
-      cache: {
-        hit: true,
-        detailsAvailable: hasMeaningfulDetails(details),
-        checkedAt: row[0] ?? null
-      }
-    } satisfies CompanyResult;
+    return companyFromSheetRow(row) satisfies CompanyResult;
   } catch (error) {
     console.log("GOOGLE SHEETS CACHE RC READ ERROR:", error instanceof Error ? error.message : error);
     return null;
