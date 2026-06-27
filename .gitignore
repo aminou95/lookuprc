@@ -29,3 +29,6 @@ local-*.log
 local-*.err
 
 .vercel
+
+# Local Netlify folder
+.netlify
